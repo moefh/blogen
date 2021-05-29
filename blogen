@@ -1,0 +1,93 @@
+#!/usr/bin/env python3
+
+import sys
+import os
+import re
+import argparse
+import datetime
+import time
+
+import blogenlib.config
+import blogenlib.builder
+
+class CmdNewPost:
+    def __init__(self, subparsers):
+        self.name = 'new-post'
+        self.parser = subparsers.add_parser(self.name,
+                                            help='create new post')
+        self.parser.set_defaults(cmd=self)
+        self.parser.add_argument('name',
+                                 nargs='*',
+                                 help='post name')
+
+    def run(self, args, cfg):
+        post_title = ' '.join(args.name).strip()
+        if not post_title:
+            print("Error: you must specify a non-empty post title")
+            return 1
+        filename = re.sub(r'[^a-z0-9]+', '-', post_title, flags=re.IGNORECASE)
+        post_dir = os.path.join(cfg.v.source_dir, '_posts', filename)
+        post_filename = post_dir + '.md'
+        if os.path.isfile(post_filename):
+            print("ERROR: post file already exists: {}".format(post_filename))
+            return 1
+        print("-> making directory '{}'".format(post_dir))
+        os.makedirs(post_dir, exist_ok=True)
+        print("-> writing post file '{}'".format(post_filename))
+        with open(post_filename, 'w') as f:
+            cur_time = datetime.datetime.now()
+            f.write('---\n')
+            f.write('title: {}\n'.format(post_title))
+            f.write('date: {}\n'.format(cur_time.strftime('%Y-%m-%d %H:%M:%S')))
+            f.write('tags:\n')
+            f.write('---\n')
+        print("Post created: {}".format(post_filename))
+        return 0
+
+class CmdBuild:
+    def __init__(self, subparsers):
+        self.name = 'build'
+        self.parser = subparsers.add_parser(self.name,
+                                            help='build blog')
+        self.parser.set_defaults(cmd=self)
+        self.parser.add_argument('-v', '--verbose', action='store_true',
+                                 help="show build messages")
+        self.parser.add_argument('-f', '--force-rebuild', action='store_true',
+                        help="force rebuild of all pages")
+
+    def run(self, args, cfg):
+        start_time = time.perf_counter()
+        builder = blogenlib.builder.Builder(cfg, args)
+        builder.build()
+        end_time = time.perf_counter()
+        print("Build completed in {:1.1} seconds.".format(end_time - start_time))
+        return 0
+
+def make_arg_parser():
+    commands = [
+        CmdNewPost,
+        CmdBuild,
+    ]
+    
+    parser = argparse.ArgumentParser(epilog='Use "blogen <command> -h" to get help for <command>.')
+    parser.set_defaults(cmd=None)
+    parser.add_argument('--config', default='blogen.cfg',
+                        help="specify config file (default: blogen.cfg)")
+    subparsers = parser.add_subparsers(title='commands')
+    for cmd in commands:
+        cmd(subparsers)
+    return parser
+
+def main():
+    parser = make_arg_parser()
+    args = parser.parse_args()
+    if args.cmd:
+        cfg = blogenlib.config.Config(args.config)
+        exit_code = args.cmd.run(args, cfg)
+        if exit_code:
+            sys.exit(exit_code)
+    else:
+        parser.print_help()
+        sys.exit(1)
+
+main()
